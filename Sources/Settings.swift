@@ -59,6 +59,7 @@ final class Settings {
         static let smartSubstitutions = "smartSubstitutions"
         static let livePreview = "livePreview"
         static let restoresSession = "restoresSession"
+        static let showLineNumbers = "showLineNumbers"
     }
 
     private let d = UserDefaults.standard
@@ -78,6 +79,7 @@ final class Settings {
             K.smartSubstitutions: false,
             K.livePreview: true,
             K.restoresSession: true,
+            K.showLineNumbers: false,
         ])
     }
 
@@ -138,6 +140,11 @@ final class Settings {
     var smartSubstitutions: Bool {
         get { d.bool(forKey: K.smartSubstitutions) }
         set { d.set(newValue, forKey: K.smartSubstitutions); changed() }
+    }
+    /// Draw line numbers in the margin beside the text column.
+    var showLineNumbers: Bool {
+        get { d.bool(forKey: K.showLineNumbers) }
+        set { d.set(newValue, forKey: K.showLineNumbers); changed() }
     }
     /// Reopen last session's documents, keeping unsaved work between launches.
     var restoresSession: Bool {

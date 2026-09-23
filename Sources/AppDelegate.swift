@@ -59,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.refresh()
     }
 
+    @objc func toggleLineNumbers(_ sender: Any?) {
+        Settings.shared.showLineNumbers.toggle()
+        preferences.refresh()
+    }
+
     @objc func toggleStatusBar(_ sender: Any?) {
         Settings.shared.showStatusBar.toggle()
         preferences.refresh()
@@ -97,6 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = Settings.shared.livePreview ? .on : .off
         case #selector(toggleStatusBar(_:)):
             item.state = Settings.shared.showStatusBar ? .on : .off
+        case #selector(toggleLineNumbers(_:)):
+            item.state = Settings.shared.showLineNumbers ? .on : .off
         case #selector(toggleHighlighting(_:)):
             item.state = Settings.shared.syntaxHighlighting ? .on : .off
         default: break
@@ -241,6 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Hide Markdown Syntax", #selector(toggleLivePreview(_:)), "e", [.command, .control], target: self),
             item("Markdown Highlighting", #selector(toggleHighlighting(_:)), "h", [.command, .control], target: self),
             item("Status Bar", #selector(toggleStatusBar(_:)), "s", [.command, .control], target: self),
+            item("Line Numbers", #selector(toggleLineNumbers(_:)), "l", [.command, .control], target: self),
             .separator(),
             item("Zoom In", #selector(zoomIn(_:)), "+", target: self),
             item("Zoom Out", #selector(zoomOut(_:)), "-", target: self),

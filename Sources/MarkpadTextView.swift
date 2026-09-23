@@ -12,6 +12,30 @@ final class MarkpadTextView: NSTextView {
     var isMarkdown: Bool = true
     weak var renderer: MarkdownRenderer?
 
+    /// Total paragraphs in the document, used to size the line number margin so
+    /// it does not jump about as you scroll.
+    var documentLineCount = 1 {
+        didSet { if documentLineCount != oldValue { needsDisplay = true } }
+    }
+    private var gutterFont: NSFont = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+    private var digitWidth: CGFloat = 8
+
+    /// Space the line numbers need, including the gap to the text. Zero when
+    /// they are switched off.
+    var gutterWidth: CGFloat {
+        guard Settings.shared.showLineNumbers else { return 0 }
+        let digits = max(2, String(max(1, documentLineCount)).count)
+        return (CGFloat(digits) * digitWidth).rounded(.up) + 14
+    }
+
+    /// Recomputed whenever the editor font changes.
+    func refreshGutterMetrics() {
+        let body = Settings.shared.editorFont
+        gutterFont = .monospacedDigitSystemFont(ofSize: max(9, body.pointSize * 0.85), weight: .regular)
+        digitWidth = ("0" as NSString).size(withAttributes: [.font: gutterFont]).width
+        needsDisplay = true
+    }
+
     // MARK: - Caret
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
@@ -26,9 +50,10 @@ final class MarkpadTextView: NSTextView {
     /// bars, rules and the backgrounds behind code.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard let renderer, !renderer.decorations.isEmpty,
-              let layout = layoutManager, let container = textContainer,
-              let storage = textStorage, layout.numberOfGlyphs > 0 else { return }
+        guard let layout = layoutManager, let container = textContainer,
+              let storage = textStorage else { return }
+        drawLineNumbers(in: rect, layout: layout, container: container, storage: storage)
+        guard let renderer, !renderer.decorations.isEmpty, layout.numberOfGlyphs > 0 else { return }
 
         let origin = textContainerOrigin
         let padding = container.lineFragmentPadding
@@ -130,6 +155,97 @@ final class MarkpadTextView: NSTextView {
                 }
             }
         }
+    }
+
+    // MARK: - Line numbers
+
+    /// Numbers live in the left margin beside the text column rather than at
+    /// the window edge, so they stay next to the words however wide the window
+    /// gets. Only the first fragment of a paragraph is numbered, so wrapped
+    /// lines share one number.
+    private func drawLineNumbers(in rect: NSRect, layout: NSLayoutManager,
+                                 container: NSTextContainer, storage: NSTextStorage) {
+        guard Settings.shared.showLineNumbers, gutterWidth > 0 else { return }
+
+        let text = storage.string as NSString
+        let origin = textContainerOrigin
+        let rightEdge = origin.x + container.lineFragmentPadding - 10
+        let active = renderer?.activeRange ?? NSRange(location: NSNotFound, length: 0)
+
+        func draw(_ number: Int, baseline: CGFloat, current: Bool) {
+            let string = NSAttributedString(string: "\(number)", attributes: [
+                .font: gutterFont,
+                .foregroundColor: current ? NSColor.secondaryLabelColor : NSColor.quaternaryLabelColor,
+            ])
+            string.draw(at: NSPoint(x: rightEdge - string.size().width,
+                                    y: baseline - gutterFont.ascender))
+        }
+
+        // An empty document, or the blank line after a trailing newline, has no
+        // glyphs to measure against; centre the number in the fragment instead.
+        func drawInExtraFragment(_ number: Int) {
+            let fragment = layout.extraLineFragmentRect.offsetBy(dx: origin.x, dy: origin.y)
+            guard !fragment.isEmpty, fragment.maxY >= rect.minY, fragment.minY <= rect.maxY else { return }
+            let centred = fragment.midY + (gutterFont.ascender + gutterFont.descender) / 2
+            draw(number, baseline: centred, current: active.location >= text.length)
+        }
+
+        guard text.length > 0 else { return drawInExtraFragment(1) }
+        guard layout.numberOfGlyphs > 0 else { return }
+
+        /// Concealed glyphs map back to the previous line, so a number must be
+        /// placed from the first character on its line that is really drawn.
+        func anchor(in line: NSRange) -> Int {
+            var index = line.location
+            while index < NSMaxRange(line), renderer?.hidden.contains(index) == true { index += 1 }
+            return min(index, text.length - 1)
+        }
+
+        let visibleGlyphs = layout.glyphRange(forBoundingRect: rect, in: container)
+        let visible = layout.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
+        var paragraph = text.paragraphRange(
+            for: NSRange(location: min(visible.location, text.length - 1), length: 0))
+        var number = lineNumber(at: paragraph.location, in: text)
+        let limit = NSMaxRange(visible)
+
+        while paragraph.location < text.length {
+            let index = anchor(in: paragraph)
+            let glyph = min(layout.glyphIndexForCharacter(at: index), layout.numberOfGlyphs - 1)
+            let fragment = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                .offsetBy(dx: origin.x, dy: origin.y)
+            if fragment.minY > rect.maxY { break }
+            if fragment.maxY >= rect.minY {
+                draw(number,
+                     baseline: fragment.minY + layout.location(forGlyphAt: glyph).y,
+                     current: NSIntersectionRange(paragraph, active).length > 0
+                         || paragraph.location == active.location)
+            }
+            let next = NSMaxRange(paragraph)
+            guard paragraph.length > 0, next < text.length else { break }
+            if next > limit { break }
+            paragraph = text.paragraphRange(for: NSRange(location: next, length: 0))
+            number += 1
+        }
+
+        if text.hasSuffix("\n") {
+            drawInExtraFragment(lineNumber(at: text.length, in: text))
+        }
+    }
+
+    /// Counts newlines up to `location` in bulk; walking line by line would
+    /// cost a call per line on every redraw.
+    private func lineNumber(at location: Int, in text: NSString) -> Int {
+        var line = 1
+        var index = 0
+        let chunk = 4096
+        var buffer = [unichar](repeating: 0, count: chunk)
+        while index < location {
+            let length = min(chunk, location - index)
+            text.getCharacters(&buffer, range: NSRange(location: index, length: length))
+            for i in 0..<length where buffer[i] == 10 { line += 1 }
+            index += length
+        }
+        return line
     }
 
     // MARK: - Smart lists

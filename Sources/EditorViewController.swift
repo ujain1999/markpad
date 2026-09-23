@@ -17,6 +17,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
     private var pendingReparse: [NSRange] = []
     private var reparseScheduled = false
     private var countTimer: Timer?
+    private var documentLineCount = 1
 
     /// Live preview is dropped for documents too large to reparse comfortably.
     private static let livePreviewLimit = 400_000
@@ -129,12 +130,14 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         updateInsets()
     }
 
-    /// Keeps the text in a centred column of comfortable measure.
+    /// Keeps the text in a centred column of comfortable measure, leaving room
+    /// for the line number margin when it is switched on.
     private func updateInsets() {
         let available = scrollView.contentSize.width
         guard available > 0 else { return }
-        let target = min(Settings.shared.lineWidth, max(280, available - 48))
-        let horizontal = max(24, ((available - target) / 2).rounded())
+        let margin = max(24, textView.gutterWidth + 24)
+        let target = min(Settings.shared.lineWidth, max(280, available - margin * 2))
+        let horizontal = max(margin, ((available - target) / 2).rounded())
         if abs(textView.textContainerInset.width - horizontal) > 0.5 {
             textView.textContainerInset = NSSize(width: horizontal, height: 28)
         }
@@ -148,6 +151,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         textView.string = document.text
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         reparseAll()
+        recountLines()
         updateStatus()
     }
 
@@ -301,7 +305,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         textView.isAutomaticDashSubstitutionEnabled = s.smartSubstitutions
         statusBar.isHidden = !s.showStatusBar
         statusHeight.constant = s.showStatusBar ? 24 : 0
+        textView.refreshGutterMetrics()
         reparseAll()
+        recountLines()
         updateInsets()
         updateStatus()
     }
@@ -311,7 +317,32 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
     private func scheduleCount() {
         countTimer?.invalidate()
         countTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
+            self?.recountLines()
             self?.updateStatus()
+        }
+    }
+
+    /// Counting the whole document is only worth doing when the text changes,
+    /// not every time the caret moves.
+    private func recountLines() {
+        let text = textView.string as NSString
+        var count = 1
+        var index = 0
+        let chunk = 4096
+        var buffer = [unichar](repeating: 0, count: chunk)
+        while index < text.length {
+            let length = min(chunk, text.length - index)
+            text.getCharacters(&buffer, range: NSRange(location: index, length: length))
+            for i in 0..<length where buffer[i] == 10 { count += 1 }
+            index += length
+        }
+        // The blank line after a trailing newline is a real place to put the
+        // caret, and both the gutter and "line N" count it, so the total must
+        // too — otherwise the end of such a file reads "line 112 of 111".
+        documentLineCount = max(1, count)
+        if textView.documentLineCount != documentLineCount {
+            textView.documentLineCount = documentLineCount
+            updateInsets()   // the margin may need room for another digit
         }
     }
 
@@ -319,26 +350,28 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         guard Settings.shared.showStatusBar else { return }
         let text = textView.string
         let words = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-        let chars = text.count
-        let lines = max(1, text.reduce(into: 1) { n, c in if c == "\n" { n += 1 } } - (text.hasSuffix("\n") ? 1 : 0))
 
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         func n(_ v: Int) -> String { formatter.string(from: NSNumber(value: v)) ?? "\(v)" }
 
         statusLeft.stringValue = document?.format.displayName ?? ""
-        statusRight.stringValue = "\(n(words)) words · \(n(chars)) characters · line \(n(currentLineNumber())) of \(n(lines))"
+        statusRight.stringValue = "\(n(words)) words · \(n(text.count)) characters"
+            + " · line \(n(currentLineNumber())) of \(n(documentLineCount))"
     }
 
     private func currentLineNumber() -> Int {
         let text = textView.string as NSString
         let location = min(textView.selectedRange().location, text.length)
-        var index = 0, line = 1
+        var line = 1
+        var index = 0
+        let chunk = 4096
+        var buffer = [unichar](repeating: 0, count: chunk)
         while index < location {
-            let range = text.lineRange(for: NSRange(location: index, length: 0))
-            if NSMaxRange(range) > location { break }
-            index = NSMaxRange(range)
-            if index <= location { line += 1 }
+            let length = min(chunk, location - index)
+            text.getCharacters(&buffer, range: NSRange(location: index, length: length))
+            for i in 0..<length where buffer[i] == 10 { line += 1 }
+            index += length
         }
         return line
     }

@@ -24,7 +24,7 @@ characters you typed.
 | Bullet / Numbered / Task / Quote | `⇧⌘8` `⇧⌘7` `⇧⌘9` `⇧⌘.` |
 | Zoom in / out / actual size | `⌘+` `⌘−` `⌃⌘0` |
 | Hide Markdown syntax / Highlighting | `⌃⌘E` `⌃⌘H` |
-| Status bar | `⌃⌘S` |
+| Status bar / Line numbers | `⌃⌘S` `⌃⌘L` |
 | Show all tabs / Previous / Next | `⇧⌘\` `⌃⇧⇥` `⌃⇥` |
 | Settings / Shortcut reference | `⌘,` `⌘/` |
 

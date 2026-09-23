@@ -19,11 +19,12 @@ final class PreferencesWindowController: NSWindowController {
     private let highlightCheck = NSButton(checkboxWithTitle: "Highlight Markdown syntax", target: nil, action: nil)
     private let listsCheck = NSButton(checkboxWithTitle: "Continue lists and quotes on Return", target: nil, action: nil)
     private let statusCheck = NSButton(checkboxWithTitle: "Show status bar", target: nil, action: nil)
+    private let lineNumberCheck = NSButton(checkboxWithTitle: "Show line numbers", target: nil, action: nil)
     private let spellCheck = NSButton(checkboxWithTitle: "Check spelling while typing", target: nil, action: nil)
     private let smartCheck = NSButton(checkboxWithTitle: "Smart quotes and dashes", target: nil, action: nil)
 
     convenience init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 650),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
         window.isReleasedWhenClosed = false
@@ -71,7 +72,7 @@ final class PreferencesWindowController: NSWindowController {
             label.widthAnchor.constraint(equalToConstant: 56).isActive = true
         }
 
-        for check in [liveCheck, highlightCheck, listsCheck, statusCheck, spellCheck, smartCheck] {
+        for check in [liveCheck, highlightCheck, listsCheck, statusCheck, lineNumberCheck, spellCheck, smartCheck] {
             check.target = self; check.action = #selector(save)
         }
         for radio in [restoreRadio, freshRadio] {
@@ -88,7 +89,8 @@ final class PreferencesWindowController: NSWindowController {
             return s
         }
 
-        let toggles = NSStackView(views: [highlightCheck, liveCheck, listsCheck, statusCheck, spellCheck, smartCheck])
+        let toggles = NSStackView(views: [highlightCheck, liveCheck, listsCheck, statusCheck,
+                                          lineNumberCheck, spellCheck, smartCheck])
         toggles.orientation = .vertical
         toggles.alignment = .leading
         toggles.spacing = 7
@@ -157,6 +159,7 @@ final class PreferencesWindowController: NSWindowController {
         liveCheck.state = s.livePreview ? .on : .off
         listsCheck.state = s.smartLists ? .on : .off
         statusCheck.state = s.showStatusBar ? .on : .off
+        lineNumberCheck.state = s.showLineNumbers ? .on : .off
         spellCheck.state = s.spellCheck ? .on : .off
         smartCheck.state = s.smartSubstitutions ? .on : .off
         restoreRadio.state = s.restoresSession ? .on : .off
@@ -206,6 +209,7 @@ final class PreferencesWindowController: NSWindowController {
         s.livePreview = liveCheck.state == .on
         s.smartLists = listsCheck.state == .on
         s.showStatusBar = statusCheck.state == .on
+        s.showLineNumbers = lineNumberCheck.state == .on
         s.spellCheck = spellCheck.state == .on
         s.smartSubstitutions = smartCheck.state == .on
         s.restoresSession = restoreRadio.state == .on
