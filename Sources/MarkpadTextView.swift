@@ -131,13 +131,35 @@ final class MarkpadTextView: NSTextView {
                        width: contentWidth, height: 1).fill()
 
             case .codeBlock(let bottomAnchor):
-                // Extra line height sits above the text, so a block whose
-                // closing fence is the last line of the file — leaving no row
-                // to pad it — would otherwise end flush against its own code.
-                let box = line.union(lineRect(at: bottomAnchor)).insetBy(dx: 0, dy: -3)
+                // A hidden fence leaves a blank row at each end of the block.
+                // Those rows are the block's padding, so take a little back as
+                // the gap to the text outside — otherwise a block written with
+                // no blank line around it sits flush against its neighbours.
+                // When a fence is visible, or absent at the end of the file,
+                // there is no such row to borrow from, so grow instead.
+                func usedMaxY(at character: Int) -> CGFloat {
+                    let index = min(max(0, character), max(0, storage.length - 1))
+                    let glyph = min(layout.glyphIndexForCharacter(at: index), layout.numberOfGlyphs - 1)
+                    return layout.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil).maxY + origin.y
+                }
+                let hidden = renderer.hidden
+                let topRowIsBlank = hidden.contains(decoration.range.location)
+                let bottomRowIsBlank = bottomAnchor > 0 && hidden.contains(bottomAnchor - 1)
+
+                // Never crop the code itself: the last line before the closing
+                // fence sets how far the box must reach.
+                let string = storage.string as NSString
+                let closing = string.lineRange(
+                    for: NSRange(location: min(bottomAnchor, max(0, string.length - 1)), length: 0))
+                let lastCodeLine = max(decoration.range.location, closing.location - 1)
+
+                let top = line.minY + (topRowIsBlank ? 7 : -3)
+                let bottom = max(usedMaxY(at: bottomAnchor) + (bottomRowIsBlank ? -7 : 3),
+                                 usedMaxY(at: lastCodeLine) + 4)
+                guard bottom > top else { continue }
                 NSColor.labelColor.withAlphaComponent(0.055).setFill()
-                NSBezierPath(roundedRect: NSRect(x: line.minX + padding, y: box.minY,
-                                                 width: contentWidth, height: box.height),
+                NSBezierPath(roundedRect: NSRect(x: line.minX + padding, y: top,
+                                                 width: contentWidth, height: bottom - top),
                              xRadius: 6, yRadius: 6).fill()
 
             case .codeSpan:
@@ -174,14 +196,16 @@ final class MarkpadTextView: NSTextView {
 
         let bodyFont = (renderer?.baseAttributes[.font] as? NSFont) ?? font ?? .systemFont(ofSize: 15)
 
-        /// A line's baseline sits one descender up from the bottom of its
-        /// fragment, because extra line height is added above the text. Reading
-        /// it from the glyph instead fails on a blank line, whose only glyph is
-        /// the newline and whose reported position is the fragment bottom — so
-        /// the number sat low until the first character was typed.
-        func baselineOfLine(at index: Int, in fragment: NSRect) -> CGFloat {
+        /// A line's baseline sits one descender up from the bottom of the space
+        /// its text actually occupies, because extra line height is added above
+        /// the text. It has to come from the used rect rather than the fragment,
+        /// which also carries any trailing paragraph spacing, and cannot come
+        /// from the glyph: a blank line's only glyph is the newline, whose
+        /// reported position is the bottom of the fragment.
+        func baselineOfLine(at index: Int, glyph: Int) -> CGFloat {
             let lineFont = (storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont) ?? bodyFont
-            return fragment.maxY - lineFont.descender.magnitude
+            let used = layout.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
+            return used.maxY + origin.y - lineFont.descender.magnitude
         }
         // Where a string's own baseline sits below the point it is drawn at.
         // The font's ascender alone leaves out leading, which is what made the
@@ -226,6 +250,10 @@ final class MarkpadTextView: NSTextView {
             for: NSRange(location: min(visible.location, text.length - 1), length: 0))
         var number = lineNumber(at: paragraph.location, in: text)
         let limit = NSMaxRange(visible)
+        // A wholly concealed last line — a closing fence at end of file — has no
+        // row of its own and reports the previous line's fragment. Numbering it
+        // would stack two numbers on one row.
+        var lastRowY = -CGFloat.greatestFiniteMagnitude
 
         while paragraph.location < text.length {
             let index = anchor(in: paragraph)
@@ -233,9 +261,11 @@ final class MarkpadTextView: NSTextView {
             let fragment = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
                 .offsetBy(dx: origin.x, dy: origin.y)
             if fragment.minY > rect.maxY { break }
-            if fragment.maxY >= rect.minY {
+            let sharesPreviousRow = abs(fragment.minY - lastRowY) < 0.5
+            lastRowY = fragment.minY
+            if fragment.maxY >= rect.minY, !sharesPreviousRow {
                 draw(number,
-                     baseline: baselineOfLine(at: index, in: fragment),
+                     baseline: baselineOfLine(at: index, glyph: glyph),
                      current: NSIntersectionRange(paragraph, active).length > 0
                          || paragraph.location == active.location)
             }
