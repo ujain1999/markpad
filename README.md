@@ -65,6 +65,27 @@ open build/Markpad.app
 into `/Applications` to install it properly. Nothing you build yourself is
 quarantined, so it just opens.
 
+## Command line
+
+Markpad ships a `mark` command inside the app bundle. Link it onto your PATH:
+
+```sh
+ln -s /Applications/Markpad.app/Contents/Resources/mark ~/.local/bin/mark
+```
+
+Any directory on your PATH works; `/usr/local/bin` needs `sudo`.
+
+```sh
+mark notes.md       # opens in Markdown mode
+mark todo.txt       # opens as plain text
+mark new-note.md    # creates the file, then opens it
+mark                # a new empty document
+```
+
+The extension decides the mode: `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdwn`
+and `.mdtext` open as Markdown, and everything else opens as plain text —
+including files with no extension at all.
+
 ## License
 
 Markpad is free software under the [GNU General Public License v3.0](LICENSE).

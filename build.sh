@@ -60,6 +60,11 @@ rm -f "${ARCHS[@]}" "$BUILD"/build-*.log
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# The `mark` command line tool travels inside the bundle so it survives being
+# dragged to /Applications; see the README for putting it on PATH.
+cp "$ROOT/Resources/mark" "$APP/Contents/Resources/mark"
+chmod +x "$APP/Contents/Resources/mark"
+
 codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 \
     || echo "note: ad-hoc code signing failed; the app will still run locally"
 

@@ -147,11 +147,9 @@ final class MarkpadDocument: NSDocument {
         } else {
             throw NSError(domain: NSCocoaErrorDomain, code: NSFileReadInapplicableStringEncodingError)
         }
-        // A file opened by extension should keep that extension's format.
-        if let ext = fileURL?.pathExtension.lowercased(), !ext.isEmpty {
-            fileType = (ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd" || ext == "mdtext")
-                ? MarkpadFormat.markdownUTI : MarkpadFormat.plainTextUTI
-        }
+        // The extension decides the mode, whatever the system inferred from
+        // the file's contents. A file with no extension is plain text.
+        fileType = MarkpadFormat.forFile(at: fileURL).uti
         editor?.reloadFromDocument()
     }
 

@@ -1,0 +1,68 @@
+#!/bin/sh
+# mark — open files in Markpad from the terminal.
+#
+# The file extension decides the mode: .md and friends open as Markdown,
+# anything else — including files with no extension — opens as plain text.
+
+set -eu
+
+BUNDLE_ID="com.markpad.Markpad"
+
+usage() {
+    cat <<'USAGE'
+usage: mark [file ...]
+
+Opens each file in Markpad. Files that do not exist yet are created, so
+`mark notes.md` starts a new note. With no arguments, opens a new document.
+USAGE
+}
+
+case "${1-}" in
+    -h|--help) usage; exit 0 ;;
+esac
+
+# Prefer the bundle this script was installed from, so a copy kept outside
+# /Applications still opens itself rather than some other install.
+enclosing_app() {
+    script=$0
+    while [ -L "$script" ]; do
+        target=$(readlink "$script")
+        case "$target" in
+            /*) script=$target ;;
+            *) script=$(dirname "$script")/$target ;;
+        esac
+    done
+    dir=$(cd "$(dirname "$script")" 2>/dev/null && pwd) || return 0
+    case "$dir" in
+        */Contents/Resources) printf '%s' "${dir%/Contents/Resources}" ;;
+    esac
+}
+
+app=$(enclosing_app)
+
+if [ "$#" -eq 0 ]; then
+    if [ -n "$app" ] && [ -d "$app" ]; then
+        exec open -a "$app"
+    fi
+    exec open -b "$BUNDLE_ID"
+fi
+
+for file in "$@"; do
+    if [ -d "$file" ]; then
+        printf 'mark: %s is a directory\n' "$file" >&2
+        exit 1
+    fi
+    if [ ! -e "$file" ]; then
+        dir=$(dirname "$file")
+        if [ ! -d "$dir" ]; then
+            printf 'mark: %s: no such directory\n' "$dir" >&2
+            exit 1
+        fi
+        : > "$file"
+    fi
+done
+
+if [ -n "$app" ] && [ -d "$app" ]; then
+    exec open -a "$app" "$@"
+fi
+exec open -b "$BUNDLE_ID" "$@"

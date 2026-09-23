@@ -10,6 +10,13 @@ enum MarkpadFormat: String {
 
     static let markdownUTI = "net.daringfireball.markdown"
     static let plainTextUTI = "public.plain-text"
+    /// Extensions that open as Markdown. Anything else — including a file with
+    /// no extension at all — is plain text.
+    static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdwn", "mdtext"]
+
+    static func forFile(at url: URL?) -> MarkpadFormat {
+        markdownExtensions.contains(url?.pathExtension.lowercased() ?? "") ? .markdown : .plainText
+    }
 
     var uti: String { self == .markdown ? Self.markdownUTI : Self.plainTextUTI }
     var displayName: String { self == .markdown ? "Markdown" : "Plain Text" }
