@@ -19,9 +19,10 @@ VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/C
 DMG="$ROOT/dist/Markpad-$VERSION.dmg"
 STAGE=$(mktemp -d)/"$VOLUME"
 RW="$ROOT/dist/rw.dmg"
+MOUNT=""
 
 cleanup() {
-    hdiutil detach "/Volumes/$VOLUME" -quiet 2>/dev/null || true
+    [ -n "$MOUNT" ] && hdiutil detach "$MOUNT" -force -quiet 2>/dev/null
     rm -rf "$(dirname "$STAGE")" "$RW"
 }
 trap cleanup EXIT
@@ -32,13 +33,20 @@ ln -s /Applications "$STAGE/Applications"
 
 rm -f "$DMG" "$RW"
 hdiutil create -volname "$VOLUME" -srcfolder "$STAGE" -ov -format UDRW -fs HFS+ "$RW" >/dev/null
-hdiutil attach "$RW" -readwrite -noverify -noautoopen >/dev/null
+# Take the mount point from hdiutil rather than assuming it: if a volume of
+# the same name is already mounted, this one lands on "/Volumes/Markpad 1".
+MOUNT=$(hdiutil attach "$RW" -readwrite -noverify -noautoopen | sed -n 's|.*\(/Volumes/.*\)$|\1|p' | tail -1)
+if [ -z "$MOUNT" ]; then
+    printf 'make-dmg: could not mount the staging image\n' >&2
+    exit 1
+fi
+VOLUME_NAME=$(basename "$MOUNT")
 
 # Lay the window out so the app sits beside the Applications alias. Cosmetic;
 # the image is perfectly usable if Finder refuses to co-operate.
-osascript <<'APPLESCRIPT' >/dev/null 2>&1 || printf 'make-dmg: skipped window layout\n' >&2
+osascript >/dev/null 2>&1 <<APPLESCRIPT || printf 'make-dmg: skipped window layout\n' >&2
 tell application "Finder"
-	tell disk "Markpad"
+	tell disk "$VOLUME_NAME"
 		open
 		delay 1
 		set current view of container window to icon view
@@ -59,7 +67,8 @@ end tell
 APPLESCRIPT
 
 sync
-hdiutil detach "/Volumes/$VOLUME" -quiet
+hdiutil detach "$MOUNT" -quiet
+MOUNT=""
 hdiutil convert "$RW" -format UDZO -imagekey zlib-level=9 -o "$DMG" >/dev/null
 
 printf '%s\n' "$DMG"
