@@ -67,41 +67,27 @@ quarantined, so it just opens.
 
 ## Command line
 
-Markpad ships a `mark` command inside the app bundle. Link it onto your PATH:
+Markpad ships a `markpad` command inside the app bundle. Link it onto your PATH:
 
 ```sh
-ln -s /Applications/Markpad.app/Contents/Resources/mark ~/.local/bin/mark
+ln -s /Applications/Markpad.app/Contents/Resources/markpad ~/.local/bin/markpad
 ```
 
 Any directory on your PATH works; `/usr/local/bin` needs `sudo`.
 
 ```sh
-mark notes.md       # opens in Markdown mode
-mark todo.txt       # opens as plain text
-mark new-note.md    # creates the file, then opens it
-mark                # a new empty document
+markpad notes.md       # opens in Markdown mode
+markpad todo.txt       # opens as plain text
+markpad new-note.md    # creates the file, then opens it
+markpad                # a new empty document
 ```
 
 The extension decides the mode: `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdwn`
 and `.mdtext` open as Markdown, and everything else opens as plain text —
 including files with no extension at all.
 
-### Filename completion in zsh
-
-zsh ships `_mh`, the completion for the MH mail system, and MH has a `mark`
-command of its own — so out of the box `mark <tab>` offers mail folders rather
-than filenames. Link the bundled completion into any directory in your `$fpath`
-to take the name back:
-
-```sh
-ln -s /Applications/Markpad.app/Contents/Resources/completions/_mark \
-      /opt/homebrew/share/zsh/site-functions/_mark
-rm -f ~/.zcompdump*
-```
-
-Then open a new shell. `print -l $fpath` lists the directories zsh will look in
-if that one does not exist on your machine. bash needs nothing: it falls back to
-filename completion for unknown commands by itself.
+Filename completion needs no setup — both zsh and bash complete filenames for
+a command they do not otherwise know.
 
 ## License
 

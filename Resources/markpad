@@ -1,5 +1,5 @@
 #!/bin/sh
-# mark — open files in Markpad from the terminal.
+# markpad — open files in Markpad from the terminal.
 #
 # The file extension decides the mode: .md and friends open as Markdown,
 # anything else — including files with no extension — opens as plain text.
@@ -10,10 +10,10 @@ BUNDLE_ID="com.markpad.Markpad"
 
 usage() {
     cat <<'USAGE'
-usage: mark [file ...]
+usage: markpad [file ...]
 
 Opens each file in Markpad. Files that do not exist yet are created, so
-`mark notes.md` starts a new note. With no arguments, opens a new document.
+`markpad notes.md` starts a new note. With no arguments, opens a new document.
 USAGE
 }
 
@@ -49,13 +49,13 @@ fi
 
 for file in "$@"; do
     if [ -d "$file" ]; then
-        printf 'mark: %s is a directory\n' "$file" >&2
+        printf 'markpad: %s is a directory\n' "$file" >&2
         exit 1
     fi
     if [ ! -e "$file" ]; then
         dir=$(dirname "$file")
         if [ ! -d "$dir" ]; then
-            printf 'mark: %s: no such directory\n' "$dir" >&2
+            printf 'markpad: %s: no such directory\n' "$dir" >&2
             exit 1
         fi
         : > "$file"
