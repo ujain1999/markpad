@@ -44,3 +44,9 @@ open build/Markpad.app
 into `/Applications` to install it properly. The binary is ad-hoc signed rather
 than notarized, so on another Mac Gatekeeper will block the first launch —
 right-click the app and choose Open to clear that.
+
+## License
+
+Markpad is free software under the [GNU General Public License v3.0](LICENSE).
+You may use, study, share and modify it; if you distribute a modified version,
+it has to carry the same licence and ship its source.
