@@ -67,13 +67,11 @@ quarantined, so it just opens.
 
 ## Command line
 
-Markpad ships a `markpad` command inside the app bundle. Link it onto your PATH:
-
-```sh
-ln -s /Applications/Markpad.app/Contents/Resources/markpad ~/.local/bin/markpad
-```
-
-Any directory on your PATH works; `/usr/local/bin` needs `sudo`.
+Markpad installs a `markpad` command the first time it runs, so there is
+nothing to set up. It goes to the first writable directory on your PATH among
+`~/.local/bin`, `~/bin`, `/usr/local/bin` and `/opt/homebrew/bin`; failing
+that, to `~/.local/bin`, and the app tells you how to add it. An existing
+`markpad` that Markpad did not put there is never touched.
 
 ```sh
 markpad notes.md       # opens in Markdown mode
