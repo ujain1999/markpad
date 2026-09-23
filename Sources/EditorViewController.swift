@@ -64,7 +64,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         textView.isIncrementalSearchingEnabled = true
         textView.drawsBackground = true
         textView.backgroundColor = .textBackgroundColor
-        textView.insertionPointColor = .controlAccentColor
+        textView.insertionPointColor = .labelColor
         textView.textContainerInset = NSSize(width: 24, height: 24)
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false

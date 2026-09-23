@@ -41,7 +41,27 @@ final class MarkpadTextView: NSTextView {
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
         var r = rect
         r.size.width = 2
+
+        // The caret otherwise fills the whole line box, which is much taller
+        // than the text once line height is applied. Size it to the text on the
+        // caret's own line, and because the extra line height sits above the
+        // text, anchor it to the bottom of the box rather than centring it.
+        let font = caretFont
+        let textHeight = (font.ascender + abs(font.descender)).rounded()
+        if rect.height > textHeight {
+            r.origin.y = rect.maxY - textHeight
+            r.size.height = textHeight
+        }
         super.drawInsertionPoint(in: r, color: color, turnedOn: flag)
+    }
+
+    /// The font in force where the caret sits, so it matches a heading's size
+    /// rather than the body text's.
+    private var caretFont: NSFont {
+        let fallback = (typingAttributes[.font] as? NSFont) ?? font ?? .systemFont(ofSize: 15)
+        guard let storage = textStorage, storage.length > 0 else { return fallback }
+        let index = min(max(0, selectedRange().location), storage.length - 1)
+        return (storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont) ?? fallback
     }
 
     // MARK: - Decorations
