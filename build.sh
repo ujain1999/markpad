@@ -14,9 +14,17 @@ SDK="$(xcrun --sdk macosx --show-sdk-path)"
 SOURCES=("$ROOT"/Sources/*.swift)
 
 # --- icon -------------------------------------------------------------------
+# Resources/AppIcon.png is the 1024x1024 master; every size is derived from it.
 ICONSET="$BUILD/AppIcon.iconset"
-if xcrun swift "$ROOT/tools/MakeIcon.swift" "$ICONSET" >/dev/null 2>&1 \
-   && iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null; then
+mkdir -p "$ICONSET"
+icon_ok=1
+for spec in "16 icon_16x16" "32 icon_16x16@2x" "32 icon_32x32" "64 icon_32x32@2x" \
+            "128 icon_128x128" "256 icon_128x128@2x" "256 icon_256x256" \
+            "512 icon_256x256@2x" "512 icon_512x512" "1024 icon_512x512@2x"; do
+    set -- $spec
+    sips -z "$1" "$1" "$ROOT/Resources/AppIcon.png" --out "$ICONSET/$2.png" >/dev/null 2>&1 || icon_ok=0
+done
+if [ "$icon_ok" = "1" ] && iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null; then
     rm -rf "$ICONSET"
 else
     echo "note: icon generation skipped (app will use the generic icon)"
