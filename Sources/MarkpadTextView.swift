@@ -172,22 +172,41 @@ final class MarkpadTextView: NSTextView {
         let rightEdge = origin.x + container.lineFragmentPadding - 10
         let active = renderer?.activeRange ?? NSRange(location: NSNotFound, length: 0)
 
+        let bodyFont = (renderer?.baseAttributes[.font] as? NSFont) ?? font ?? .systemFont(ofSize: 15)
+
+        /// A line's baseline sits one descender up from the bottom of its
+        /// fragment, because extra line height is added above the text. Reading
+        /// it from the glyph instead fails on a blank line, whose only glyph is
+        /// the newline and whose reported position is the fragment bottom — so
+        /// the number sat low until the first character was typed.
+        func baselineOfLine(at index: Int, in fragment: NSRect) -> CGFloat {
+            let lineFont = (storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont) ?? bodyFont
+            return fragment.maxY - lineFont.descender.magnitude
+        }
+        // Where a string's own baseline sits below the point it is drawn at.
+        // The font's ascender alone leaves out leading, which is what made the
+        // numbers sit slightly off the text they belong to.
+        let baselineInset = layout.defaultBaselineOffset(for: gutterFont)
+
         func draw(_ number: Int, baseline: CGFloat, current: Bool) {
             let string = NSAttributedString(string: "\(number)", attributes: [
                 .font: gutterFont,
                 .foregroundColor: current ? NSColor.secondaryLabelColor : NSColor.quaternaryLabelColor,
             ])
             string.draw(at: NSPoint(x: rightEdge - string.size().width,
-                                    y: baseline - gutterFont.ascender))
+                                    y: baseline - baselineInset))
         }
 
         // An empty document, or the blank line after a trailing newline, has no
-        // glyphs to measure against; centre the number in the fragment instead.
+        // glyphs to measure a baseline against. Extra line height sits above the
+        // text, so the baseline is one descender up from the bottom of the
+        // fragment — the same place typing on that line would put it, which is
+        // what stops the number shifting on the first keystroke.
         func drawInExtraFragment(_ number: Int) {
             let fragment = layout.extraLineFragmentRect.offsetBy(dx: origin.x, dy: origin.y)
             guard !fragment.isEmpty, fragment.maxY >= rect.minY, fragment.minY <= rect.maxY else { return }
-            let centred = fragment.midY + (gutterFont.ascender + gutterFont.descender) / 2
-            draw(number, baseline: centred, current: active.location >= text.length)
+            draw(number, baseline: fragment.maxY - bodyFont.descender.magnitude,
+                 current: active.location >= text.length)
         }
 
         guard text.length > 0 else { return drawInExtraFragment(1) }
@@ -216,7 +235,7 @@ final class MarkpadTextView: NSTextView {
             if fragment.minY > rect.maxY { break }
             if fragment.maxY >= rect.minY {
                 draw(number,
-                     baseline: fragment.minY + layout.location(forGlyphAt: glyph).y,
+                     baseline: baselineOfLine(at: index, in: fragment),
                      current: NSIntersectionRange(paragraph, active).length > 0
                          || paragraph.location == active.location)
             }
