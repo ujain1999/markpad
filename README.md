@@ -30,8 +30,29 @@ characters you typed.
 
 ## Install
 
-Requires macOS 13 or later and the Xcode command line tools
-(`xcode-select --install`).
+Requires macOS 13 or later.
+
+### Download
+
+Get the `.dmg` from [Releases](https://github.com/ujain1999/markpad/releases),
+open it, and drag Markpad into Applications.
+
+Markpad is signed ad-hoc rather than notarized, because notarizing requires a
+paid Apple Developer account. macOS quarantines anything downloaded from the
+internet, so the first launch is refused with a warning that the app cannot be
+checked for malicious software. Clear the quarantine flag once:
+
+```sh
+xattr -d com.apple.quarantine /Applications/Markpad.app
+```
+
+It opens normally from then on. If you would rather not use the terminal: try
+to open it, then go to **System Settings ▸ Privacy & Security**, find the
+message about Markpad being blocked, and click **Open Anyway**.
+
+### Build from source
+
+Also needs the Xcode command line tools (`xcode-select --install`).
 
 ```sh
 git clone https://github.com/ujain1999/markpad.git
@@ -41,9 +62,8 @@ open build/Markpad.app
 ```
 
 `build.sh` produces a universal `build/Markpad.app` (arm64 + x86_64). Drag it
-into `/Applications` to install it properly. The binary is ad-hoc signed rather
-than notarized, so on another Mac Gatekeeper will block the first launch —
-right-click the app and choose Open to clear that.
+into `/Applications` to install it properly. Nothing you build yourself is
+quarantined, so it just opens.
 
 ## License
 
