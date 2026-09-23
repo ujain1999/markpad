@@ -64,6 +64,8 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # dragged to /Applications; see the README for putting it on PATH.
 cp "$ROOT/Resources/mark" "$APP/Contents/Resources/mark"
 chmod +x "$APP/Contents/Resources/mark"
+mkdir -p "$APP/Contents/Resources/completions"
+cp "$ROOT/Resources/completions/_mark" "$APP/Contents/Resources/completions/_mark"
 
 codesign --force --sign - --timestamp=none "$APP" >/dev/null 2>&1 \
     || echo "note: ad-hoc code signing failed; the app will still run locally"

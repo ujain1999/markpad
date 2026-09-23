@@ -86,6 +86,23 @@ The extension decides the mode: `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdwn`
 and `.mdtext` open as Markdown, and everything else opens as plain text —
 including files with no extension at all.
 
+### Filename completion in zsh
+
+zsh ships `_mh`, the completion for the MH mail system, and MH has a `mark`
+command of its own — so out of the box `mark <tab>` offers mail folders rather
+than filenames. Link the bundled completion into any directory in your `$fpath`
+to take the name back:
+
+```sh
+ln -s /Applications/Markpad.app/Contents/Resources/completions/_mark \
+      /opt/homebrew/share/zsh/site-functions/_mark
+rm -f ~/.zcompdump*
+```
+
+Then open a new shell. `print -l $fpath` lists the directories zsh will look in
+if that one does not exist on your machine. bash needs nothing: it falls back to
+filename completion for unknown commands by itself.
+
 ## License
 
 Markpad is free software under the [GNU General Public License v3.0](LICENSE).
