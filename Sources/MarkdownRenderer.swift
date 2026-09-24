@@ -138,15 +138,16 @@ final class MarkdownRenderer {
     // MARK: Tables
 
     /// Like fences, a table only makes sense whole, so they are found across
-    /// the document. Returns true when the set changed and everything must
-    /// reparse.
+    /// the document. Returns true when a table appeared, went away or moved,
+    /// which is when everything has to reparse. A table merely growing or
+    /// shrinking in place does not count: the edited paragraph's own reparse
+    /// widens to the whole table anyway, and forcing a full pass on every
+    /// keystroke inside a cell would scale with the size of the document.
     @discardableResult
     func rescanTables(in text: NSString) -> Bool {
-        let previous = tables.map(\.range)
+        let previous = tables.map(\.range.location)
         tables = (isMarkdown && Settings.shared.syntaxHighlighting) ? MarkdownTables.scan(text) : []
-        let current = tables.map(\.range)
-        return previous.count != current.count
-            || zip(previous, current).contains { !NSEqualRanges($0, $1) }
+        return previous != tables.map(\.range.location)
     }
 
     /// Grows a range to cover any table it touches. A table is laid out as a
@@ -412,18 +413,16 @@ final class MarkdownRenderer {
     }
 
     private func layOut(_ table: MarkdownTable, in storage: NSTextStorage, text: NSString) {
-        // The header is bold, and bold is wider, so set it before measuring.
-        if let header = table.header {
-            for cell in header.cells where cell.length > 0 {
-                let current = storage.attribute(.font, at: cell.location, effectiveRange: nil) as? NSFont ?? body
-                storage.addAttribute(.font, value: variant(current, bold: true), range: cell)
-            }
-        }
-
+        // The header is bold and bold is wider, so it has to be measured that
+        // way — but only measured. Writing it before knowing the table fits
+        // would leave a bold header on one that is then left as written.
         var measured: [[CGFloat]] = []
-        for row in table.rows {
+        for (index, row) in table.rows.enumerated() {
+            let isHeader = index == 0
             measured.append((0..<table.columnCount).map { column in
-                column < row.cells.count ? width(of: row.cells[column], in: storage, text: text) : 0
+                column < row.cells.count
+                    ? width(of: row.cells[column], in: storage, text: text, bold: isHeader)
+                    : 0
             })
         }
 
@@ -435,6 +434,13 @@ final class MarkdownRenderer {
         let available = contentWidth - 1
         // Too wide to lay out without squeezing text: leave it as written.
         guard natural > 0, natural <= available else { return }
+
+        if let header = table.header {
+            for cell in header.cells where cell.length > 0 {
+                let current = storage.attribute(.font, at: cell.location, effectiveRange: nil) as? NSFont ?? body
+                storage.addAttribute(.font, value: variant(current, bold: true), range: cell)
+            }
+        }
 
         // Full width: hand out the slack in proportion to what each column needs.
         let slack = available - natural
@@ -532,7 +538,8 @@ final class MarkdownRenderer {
 
     /// Width of a cell as it will actually be drawn: concealed characters take
     /// no space, and whatever styling the inline pass applied counts.
-    private func width(of range: NSRange, in storage: NSTextStorage, text: NSString) -> CGFloat {
+    private func width(of range: NSRange, in storage: NSTextStorage, text: NSString,
+                       bold: Bool = false) -> CGFloat {
         guard range.length > 0 else { return 0 }
         let piece = NSMutableAttributedString()
         var index = range.location
@@ -541,6 +548,9 @@ final class MarkdownRenderer {
             var attributes = storage.attributes(at: index, effectiveRange: &effective)
             attributes[.paragraphStyle] = nil
             attributes[.kern] = nil
+            if bold, let font = attributes[.font] as? NSFont {
+                attributes[.font] = variant(font, bold: true)
+            }
             let end = min(NSMaxRange(effective), NSMaxRange(range))
             var cursor = index
             while cursor < end {
