@@ -10,6 +10,10 @@ is on. There is no preview pane and no second copy of your writing — you edit
 the formatted text directly, and the file on disk is always exactly the
 characters you typed.
 
+Tables are laid out across the full width of the text column, with the columns
+aligned as the delimiter row asks. Put the cursor anywhere in one and the whole
+table — not just the line you are on — comes back as plain Markdown to edit.
+
 ## Keyboard
 
 | | |
