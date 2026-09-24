@@ -182,17 +182,50 @@ final class MarkpadTextView: NSTextView {
                                                  width: contentWidth, height: bottom - top),
                              xRadius: 6, yRadius: 6).fill()
 
+            case .tableRow(let columns, let isHeader, let isLast):
+                guard let first = columns.first, let last = columns.last else { continue }
+                let left = line.minX + padding
+                let grid = NSColor.quaternaryLabelColor
+                let edge = NSColor.tertiaryLabelColor
+
+                grid.setFill()
+                for column in columns {
+                    NSRect(x: (left + column).rounded(), y: line.minY,
+                           width: 1, height: line.height).fill()
+                }
+
+                let span = last - first
+                if isHeader {
+                    NSRect(x: left, y: line.minY, width: span, height: 1).fill()
+                    edge.setFill()
+                    NSRect(x: left, y: line.maxY - 1, width: span, height: 1).fill()
+                } else {
+                    if isLast { edge.setFill() }
+                    NSRect(x: left, y: line.maxY - 1, width: span, height: 1).fill()
+                }
+
             case .codeSpan:
                 let inBounds = NSIntersectionRange(decoration.range,
                                                    NSRange(location: 0, length: storage.length))
                 guard inBounds.length > 0 else { continue }
                 let glyphs = layout.glyphRange(forCharacterRange: inBounds, actualCharacterRange: nil)
-                NSColor.labelColor.withAlphaComponent(0.075).setFill()
+                // A table row pads its cells by widening the last character, so
+                // discount that or the pill stretches to the column's edge.
+                let trailingKern = (storage.attribute(.kern, at: NSMaxRange(inBounds) - 1,
+                                                      effectiveRange: nil) as? CGFloat) ?? 0
+                var pieces: [NSRect] = []
                 layout.enumerateEnclosingRects(forGlyphRange: glyphs,
                                                withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
                                                in: container) { piece, _ in
-                    let pill = piece.offsetBy(dx: origin.x, dy: origin.y)
-                        .insetBy(dx: -2.5, dy: piece.height * 0.17)
+                    pieces.append(piece)
+                }
+                NSColor.labelColor.withAlphaComponent(0.075).setFill()
+                for (index, piece) in pieces.enumerated() {
+                    var rect = piece
+                    if index == pieces.count - 1 { rect.size.width -= trailingKern }
+                    guard rect.width > 0 else { continue }
+                    let pill = rect.offsetBy(dx: origin.x, dy: origin.y)
+                        .insetBy(dx: -2.5, dy: rect.height * 0.17)
                     NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
                 }
             }
@@ -283,7 +316,9 @@ final class MarkpadTextView: NSTextView {
             if fragment.minY > rect.maxY { break }
             let sharesPreviousRow = abs(fragment.minY - lastRowY) < 0.5
             lastRowY = fragment.minY
-            if fragment.maxY >= rect.minY, !sharesPreviousRow {
+            // A collapsed row — a table's delimiter — has no room for a number.
+            let collapsed = fragment.height < 5
+            if fragment.maxY >= rect.minY, !sharesPreviousRow, !collapsed {
                 draw(number,
                      baseline: baselineOfLine(at: index, glyph: glyph),
                      current: NSIntersectionRange(paragraph, active).length > 0

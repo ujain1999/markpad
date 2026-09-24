@@ -13,6 +13,9 @@ struct MarkdownDecoration {
         case rule
         case codeBlock(bottomAnchor: Int)
         case codeSpan
+        /// One laid-out table row. `columns` holds the boundaries between
+        /// columns, measured from the left edge of the text column.
+        case tableRow(columns: [CGFloat], isHeader: Bool, isLast: Bool)
     }
 
     var kind: Kind
@@ -48,6 +51,9 @@ final class MarkdownRenderer {
     private(set) var hidden = IndexSet()
     private(set) var decorations: [MarkdownDecoration] = []
     private(set) var fenceRanges: [NSRange] = []
+    private(set) var tables: [MarkdownTable] = []
+    /// Width of the text column, which is what a table is stretched to fill.
+    var contentWidth: CGFloat = 0
     private(set) var baseAttributes: [NSAttributedString.Key: Any] = [:]
 
     /// Paragraph range holding the selection; its syntax stays visible.
@@ -129,12 +135,39 @@ final class MarkdownRenderer {
         fenceRanges.first { NSIntersectionRange($0, range).length > 0 }
     }
 
+    // MARK: Tables
+
+    /// Like fences, a table only makes sense whole, so they are found across
+    /// the document. Returns true when a table appeared, went away or moved,
+    /// which is when everything has to reparse. A table merely growing or
+    /// shrinking in place does not count: the edited paragraph's own reparse
+    /// widens to the whole table anyway, and forcing a full pass on every
+    /// keystroke inside a cell would scale with the size of the document.
+    @discardableResult
+    func rescanTables(in text: NSString) -> Bool {
+        let previous = tables.map(\.range.location)
+        tables = (isMarkdown && Settings.shared.syntaxHighlighting) ? MarkdownTables.scan(text) : []
+        return previous != tables.map(\.range.location)
+    }
+
+    /// Grows a range to cover any table it touches. A table is laid out as a
+    /// whole or not at all, so restyling one of its rows means restyling all.
+    func expanded(_ range: NSRange) -> NSRange {
+        var result = range
+        for table in tables where NSIntersectionRange(table.range, range).length > 0
+            || NSLocationInRange(range.location, table.range) {
+            result = NSUnionRange(result, table.range)
+        }
+        return result
+    }
+
     // MARK: Bookkeeping
 
     func reset() {
         hidden = IndexSet()
         decorations = []
         fenceRanges = []
+        tables = []
     }
 
     /// Slides concealed ranges and decorations past an edit. Anything straddling
@@ -180,6 +213,7 @@ final class MarkdownRenderer {
         if isMarkdown && Settings.shared.syntaxHighlighting {
             styleLines(storage, text, range)
             styleInline(storage, text, range)
+            styleTables(storage, text, range)
         }
         storage.endEditing()
         resolveAnchors(text, range)
@@ -362,6 +396,177 @@ final class MarkdownRenderer {
             decorations.append(MarkdownDecoration(kind: .bullet, range: markers,
                                                   anchor: anchor(after: markers, in: text)))
         }
+    }
+
+    // MARK: Tables
+
+    private let cellPadding: CGFloat = 10
+
+    private func styleTables(_ storage: NSTextStorage, _ text: NSString, _ range: NSRange) {
+        guard livePreview, contentWidth > 80 else { return }
+        for table in tables where NSIntersectionRange(table.range, range).length > 0 {
+            // The caret anywhere inside puts the whole table back to raw
+            // Markdown — markers, pipes and all — not just its own line.
+            guard !isActive(table.range) else { continue }
+            layOut(table, in: storage, text: text)
+        }
+    }
+
+    private func layOut(_ table: MarkdownTable, in storage: NSTextStorage, text: NSString) {
+        // The header is bold and bold is wider, so it has to be measured that
+        // way — but only measured. Writing it before knowing the table fits
+        // would leave a bold header on one that is then left as written.
+        var measured: [[CGFloat]] = []
+        for (index, row) in table.rows.enumerated() {
+            let isHeader = index == 0
+            measured.append((0..<table.columnCount).map { column in
+                column < row.cells.count
+                    ? width(of: row.cells[column], in: storage, text: text, bold: isHeader)
+                    : 0
+            })
+        }
+
+        var columns = (0..<table.columnCount).map { column in
+            (measured.map { $0[column] }.max() ?? 0) + cellPadding * 2
+        }
+        let natural = columns.reduce(0, +)
+        // A hair under the column, so a row filling it cannot wrap.
+        let available = contentWidth - 1
+        // Too wide to lay out without squeezing text: leave it as written.
+        guard natural > 0, natural <= available else { return }
+
+        if let header = table.header {
+            for cell in header.cells where cell.length > 0 {
+                let current = storage.attribute(.font, at: cell.location, effectiveRange: nil) as? NSFont ?? body
+                storage.addAttribute(.font, value: variant(current, bold: true), range: cell)
+            }
+        }
+
+        // Full width: hand out the slack in proportion to what each column needs.
+        let slack = available - natural
+        for index in columns.indices { columns[index] += slack * (columns[index] / natural) }
+
+        var edges: [CGFloat] = [0]
+        for width in columns { edges.append(edges[edges.count - 1] + width) }
+
+        collapse(table.delimiter, in: storage)
+        for (index, row) in table.rows.enumerated() {
+            place(row, measured: measured[index], edges: edges, table: table,
+                  isHeader: index == 0, isLast: index == table.rows.count - 1,
+                  in: storage)
+        }
+    }
+
+    /// Positions one row's cells by widening the character before each of them.
+    /// The text is never touched: the gaps are kerning, and everything that is
+    /// not cell text — the pipes and their padding — is concealed.
+    private func place(_ row: MarkdownTable.Row, measured: [CGFloat], edges: [CGFloat],
+                       table: MarkdownTable, isHeader: Bool, isLast: Bool,
+                       in storage: NSTextStorage) {
+        // Conceal the pipes and their padding only. Clearing the whole row and
+        // reinstating the cells would also un-hide the inline markers inside
+        // them, which would then be drawn wider than they were measured.
+        var gapStart = row.content.location
+        for (column, cell) in row.cells.enumerated() {
+            // A row may carry more cells than the header declares columns.
+            // There is nowhere to put those, so they go with the pipes.
+            guard column < table.columnCount else { break }
+            conceal(NSRange(location: gapStart, length: max(0, cell.location - gapStart)))
+            gapStart = NSMaxRange(cell)
+        }
+        conceal(NSRange(location: gapStart, length: max(0, NSMaxRange(row.content) - gapStart)))
+
+        var pen: CGFloat = 0        // where the next glyph lands
+        var indent: CGFloat = 0     // used until something has been drawn
+        var carrier: Int?           // last drawn character, which holds the gap
+        var carried: CGFloat = 0
+
+        for column in 0..<table.columnCount {
+            let cell = column < row.cells.count ? row.cells[column] : NSRange(location: 0, length: 0)
+            let cellWidth = measured[column]
+            let target: CGFloat
+            switch table.alignments[column] {
+            case .leading:  target = edges[column] + cellPadding
+            case .trailing: target = edges[column + 1] - cellPadding - cellWidth
+            case .center:   target = edges[column] + (edges[column + 1] - edges[column] - cellWidth) / 2
+            }
+
+            let gap = max(0, target - pen)
+            if let carrier {
+                carried += gap
+                storage.addAttribute(.kern, value: carried, range: NSRange(location: carrier, length: 1))
+            } else {
+                indent = target
+            }
+            pen = target + cellWidth
+            // The gap rides on the last character that is actually drawn: a
+            // concealed one is a null glyph with no advance to widen.
+            if let last = lastVisible(in: cell) {
+                carrier = last
+                carried = 0
+            }
+        }
+
+        storage.addAttribute(.paragraphStyle,
+                             value: paragraphStyle(firstLine: indent, head: indent),
+                             range: row.content)
+        decorations.append(MarkdownDecoration(
+            kind: .tableRow(columns: edges, isHeader: isHeader, isLast: isLast),
+            range: row.content,
+            anchor: row.content.location))
+    }
+
+    private func lastVisible(in range: NSRange) -> Int? {
+        var index = NSMaxRange(range) - 1
+        while index >= range.location {
+            if !hidden.contains(index) { return index }
+            index -= 1
+        }
+        return nil
+    }
+
+    /// Hides a line and takes its height away, so the delimiter row leaves no
+    /// gap between the header and the body.
+    private func collapse(_ line: NSRange, in storage: NSTextStorage) {
+        guard line.length > 0 else { return }
+        conceal(line)
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = 1
+        style.maximumLineHeight = 1
+        storage.addAttributes([.font: body.withSize(1), .paragraphStyle: style], range: line)
+    }
+
+    /// Width of a cell as it will actually be drawn: concealed characters take
+    /// no space, and whatever styling the inline pass applied counts.
+    private func width(of range: NSRange, in storage: NSTextStorage, text: NSString,
+                       bold: Bool = false) -> CGFloat {
+        guard range.length > 0 else { return 0 }
+        let piece = NSMutableAttributedString()
+        var index = range.location
+        while index < NSMaxRange(range) {
+            var effective = NSRange(location: 0, length: 0)
+            var attributes = storage.attributes(at: index, effectiveRange: &effective)
+            attributes[.paragraphStyle] = nil
+            attributes[.kern] = nil
+            if bold, let font = attributes[.font] as? NSFont {
+                attributes[.font] = variant(font, bold: true)
+            }
+            let end = min(NSMaxRange(effective), NSMaxRange(range))
+            var cursor = index
+            while cursor < end {
+                let concealed = hidden.contains(cursor)
+                var run = cursor
+                while run < end, hidden.contains(run) == concealed { run += 1 }
+                if !concealed {
+                    piece.append(NSAttributedString(
+                        string: text.substring(with: NSRange(location: cursor, length: run - cursor)),
+                        attributes: attributes))
+                }
+                cursor = run
+            }
+            index = end
+        }
+        return piece.size().width.rounded(.up)
     }
 
     // MARK: Inline elements

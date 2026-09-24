@@ -141,6 +141,17 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         if abs(textView.textContainerInset.width - horizontal) > 0.5 {
             textView.textContainerInset = NSSize(width: horizontal, height: 28)
         }
+
+        // Tables are stretched to the text column, so a resize has to re-lay
+        // them out. Only they care, so only they are reparsed.
+        let padding = (textView.textContainer?.lineFragmentPadding ?? 5) * 2
+        let width = max(0, available - horizontal * 2 - padding)
+        if abs(renderer.contentWidth - width) > 0.5 {
+            renderer.contentWidth = width
+            // This runs from viewDidLayout, so restyling here would mutate the
+            // text storage in the middle of a layout pass.
+            if !renderer.tables.isEmpty { scheduleReparse(renderer.tables.map(\.range)) }
+        }
     }
 
     // MARK: - Document sync
@@ -170,9 +181,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
 
         renderer.livePreview = Settings.shared.livePreview && text.length <= Self.livePreviewLimit
         let fencesMoved = renderer.rescanFences(in: text)
+        let tablesMoved = renderer.rescanTables(in: text)
         let previousActive = moveActiveRange()
 
-        if fencesMoved {
+        if fencesMoved || tablesMoved {
             reparseAll()
         } else {
             reparse([text.paragraphRange(for: edited), activeRange, previousActive])
@@ -230,7 +242,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         for range in ranges {
             let clamped = NSIntersectionRange(range, whole)
             guard range.location != NSNotFound, clamped.length > 0 else { continue }
-            let paragraphs = (storage.string as NSString).paragraphRange(for: clamped)
+            let text = storage.string as NSString
+            let paragraphs = text.paragraphRange(for: text.paragraphRange(for: renderer.expanded(clamped)))
             renderer.parse(storage, range: paragraphs)
             layout.invalidateGlyphs(forCharacterRange: paragraphs, changeInLength: 0, actualCharacterRange: nil)
             layout.invalidateLayout(forCharacterRange: paragraphs, actualCharacterRange: nil)
@@ -247,6 +260,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate,
         renderer.livePreview = Settings.shared.livePreview && storage.length <= Self.livePreviewLimit
         renderer.reset()
         renderer.rescanFences(in: storage.string as NSString)
+        renderer.rescanTables(in: storage.string as NSString)
         activeRange = NSRange(location: NSNotFound, length: 0)
         _ = moveActiveRange()
 
